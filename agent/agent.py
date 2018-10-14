@@ -5,6 +5,7 @@ import sys
 import imaplib
 import email
 import base64
+import argparse
 
 from threading import Thread
 from email.header import decode_header,make_header
@@ -24,10 +25,10 @@ def open_connection():
 
 
 def fetch_message(num):
-	c = open_connection()
-	c.select("INBOX",readonly=True)
-	typ,data = c.fetch(num,"(RFC822)")
-	c.logout()
+	s = open_connection()
+	s.select("INBOX",readonly=True)
+	typ,data = s.fetch(num,"(RFC822)")
+	s.logout()
 	return typ,data
 	
 
@@ -39,14 +40,14 @@ def write_attachments(filepath,payload):
 
 def main():
 	try:
-		c = open_connection()
-		c.select("INBOX",readonly=True)
+		s = open_connection()
+		s.select("INBOX",readonly=True)
 			
-		m = "{0} IDLE\r\n".format(c._new_tag().decode("UTF-8"))
-		c.send(m.encode())
+		m = "{0} IDLE\r\n".format(s._new_tag().decode("UTF-8"))
+		s.send(m.encode())
 
 		while True:
-			line  = c.readline().strip()
+			line  = s.readline().strip()
 			print(line)	
 
 			if "EXISTS" in line.decode("UTF-8"):
@@ -76,11 +77,20 @@ def main():
 
 	finally:
 		try:
-			c.close()
+			s.close()
 		except:
 			pass
-		c.logout()
+		s.logout()
 
 
 if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--user",help="set IMAP user name")
+	parser.add_argument("--password",help="set IMAP user password")
+	parser.add_argument("--filepath",help="save attachments filepath")
+	
+	args = parser.parse_args()
+	user = str(args.user)
+	password = str(args.password)
+	detach_dir = str(args.filepath)
 	main()
