@@ -5,7 +5,10 @@ import sys
 import imaplib
 import email
 import base64
+import json
 import argparse
+import requests
+import hashlib
 
 from threading import Thread
 from email.header import decode_header,make_header
@@ -16,6 +19,9 @@ server = "localhost"
 user = ""
 password = ""
 detach_dir = "."
+
+headers = {"Accept-Encoding": "gzip, deflate"}
+vt_url = 'https://www.virustotal.com/vtapi/v2/file/report'
 
 
 def open_connection():
@@ -38,6 +44,28 @@ def write_attachments(filepath,payload):
 	f.close()
 
 
+def scan_attachments(filepath,thread1):
+	thread1.join()
+
+	with open(filepath,"rb") as f:
+		fr = f.read()
+	f.close()
+
+	result = ""
+	file_hash = hashlib.md5(fr).hexdigest()
+	parameters = {"resource":file_hash,"apikey":apikey}
+	response = requests.get(vt_url,params=parameters,headers=headers)
+	
+	if response.status_code == 200:
+		json_dict = json.loads(response.text)
+
+		for key,value in json_dict.items():
+			if key != "scans":
+				result += "{0} : {1}\n".format(key,value)
+	
+	print(result)
+
+
 def main():
 	try:
 		s = open_connection()
@@ -48,7 +76,7 @@ def main():
 
 		while True:
 			line  = s.readline().strip()
-			print(line)	
+			# print(line)	
 
 			if "EXISTS" in line.decode("UTF-8"):
 				num = line.decode("UTF-8").split(" ")[1]
@@ -70,10 +98,15 @@ def main():
 					if bool(filname):
 						filepath = os.path.join(detach_dir,'attachments',filname)
 						if not os.path.isfile(filepath):
-							# print("attachments detect : {0}".format(filname))
-							t = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
-							t.daemon = True
-							t.start()
+							print("attachments detect : {0}".format(filname))
+							t1 = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
+							t1.daemon = True
+							t1.start()
+
+							print("start scan attachments : {0}".format(filname))
+							t2 = Thread(target=scan_attachments,args=(filepath,t1))
+							t2.daemon = True
+							t2.start()
 
 	finally:
 		try:
@@ -87,10 +120,13 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--user",help="set IMAP user name")
 	parser.add_argument("--password",help="set IMAP user password")
-	parser.add_argument("--filepath",help="save attachments filepath")
-	
+	parser.add_argument("--filepath",help="set saving attachments filepath")
+	parser.add_argument("--apikey",help="set virustotal api key")	
+
 	args = parser.parse_args()
 	user = str(args.user)
 	password = str(args.password)
 	detach_dir = str(args.filepath)
+	apikey = str(args.apikey)
+
 	main()
