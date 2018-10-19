@@ -9,6 +9,7 @@ import json
 import argparse
 import requests
 import hashlib
+import virus_total_apis
 
 from threading import Thread
 from email.header import decode_header,make_header
@@ -19,9 +20,6 @@ server = "localhost"
 user = ""
 password = ""
 detach_dir = "."
-
-headers = {"Accept-Encoding": "gzip, deflate"}
-vt_url = 'https://www.virustotal.com/vtapi/v2/file/report'
 
 
 def open_connection():
@@ -47,24 +45,18 @@ def write_attachments(filepath,payload):
 def scan_attachments(filepath,thread1):
 	thread1.join()
 
-	with open(filepath,"rb") as f:
-		fr = f.read()
-	f.close()
-
 	result = ""
-	file_hash = hashlib.md5(fr).hexdigest()
-	parameters = {"resource":file_hash,"apikey":apikey}
-	response = requests.get(vt_url,params=parameters,headers=headers)
+	response_scan = api.scan_file(filepath)
+	file_hash = response_scan['results']['sha1']
+	response_report = api.get_file_report(file_hash)
+	json_dict = json.loads(json.dumps(response_report))
 	
-	if response.status_code == 200:
-		json_dict = json.loads(response.text)
-
-		for key,value in json_dict.items():
+	for key,value in json_dict['results'].items():
 			if key != "scans":
 				result += "{0} : {1}\n".format(key,value)
 	
 	print(result)
-
+	
 
 def main():
 	try:
@@ -76,7 +68,6 @@ def main():
 
 		while True:
 			line  = s.readline().strip()
-			# print(line)	
 
 			if "EXISTS" in line.decode("UTF-8"):
 				num = line.decode("UTF-8").split(" ")[1]
@@ -128,5 +119,7 @@ if __name__ == "__main__":
 	password = str(args.password)
 	detach_dir = str(args.filepath)
 	apikey = str(args.apikey)
+
+	api = virus_total_apis.PublicApi(apikey)
 
 	main()
