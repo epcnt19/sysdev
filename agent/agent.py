@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import imaplib
 import email
 import base64
@@ -20,6 +21,7 @@ server = "localhost"
 user = ""
 password = ""
 detach_dir = "."
+log_path = "/var/log/imapagent.log"
 
 
 def open_connection():
@@ -42,21 +44,27 @@ def write_attachments(filepath,payload):
 	f.close()
 
 
+def write_log(message):
+	with open(log_path,"a") as f:
+		f.write(message)
+	f.close()
+
+
 def scan_attachments(filepath,thread1):
 	thread1.join()
 
 	result = ""
 	response_scan = api.scan_file(filepath)
-	file_hash = response_scan['results']['sha1']
+	file_hash = response_scan["results"]["sha1"]
 	response_report = api.get_file_report(file_hash)
 	json_dict = json.loads(json.dumps(response_report))
 	
-	for key,value in json_dict['results'].items():
+	for key,value in json_dict["results"].items():
 			if key != "scans":
 				result += "{0} : {1}\n".format(key,value)
 	
-	print(result)
-	
+	write_log(result)
+
 
 def main():
 	try:
@@ -89,12 +97,12 @@ def main():
 					if bool(filname):
 						filepath = os.path.join(detach_dir,'attachments',filname)
 						if not os.path.isfile(filepath):
-							print("attachments detect : {0}".format(filname))
+							write_log("attachments detect : {0}\n".format(filname))
 							t1 = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
 							t1.daemon = True
 							t1.start()
 
-							print("start scan attachments : {0}".format(filname))
+							write_log("start scan attachments : {0}\n".format(filname))
 							t2 = Thread(target=scan_attachments,args=(filepath,t1))
 							t2.daemon = True
 							t2.start()
@@ -105,6 +113,19 @@ def main():
 		except:
 			pass
 		s.logout()
+
+
+def daemon():
+	sys.stdout = open(log_path,"a")
+	sys.stderr = open(log_path,"a")
+
+	pid = os.fork()
+	
+	if pid > 0:
+		sys.exit()
+
+	if pid == 0:
+		main()
 
 
 if __name__ == "__main__":
@@ -121,5 +142,4 @@ if __name__ == "__main__":
 	apikey = str(args.apikey)
 
 	api = virus_total_apis.PublicApi(apikey)
-
-	main()
+	daemon()
