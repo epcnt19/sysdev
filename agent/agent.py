@@ -10,31 +10,30 @@ import json
 import argparse
 import requests
 import hashlib
-import virus_total_apis
 
+from vt import Virustotal
 from threading import Thread
 from email.header import decode_header,make_header
 
 
 imaplib.Debug = 4
-server = "localhost"
-user = ""
-password = ""
+src_server = {"host":"localhost","user":"","password":""}
+dst_server = {"host":"localhost","user":"","password":""}
 detach_dir = "."
 log_path = "/var/log/imapagent.log"
 
 
-def open_connection():
-	connection = imaplib.IMAP4_SSL(server)
-	connection.login(user,password)
+def open_connection(server):
+	connection = imaplib.IMAP4_SSL(server["host"])
+	connection.login(server["user"],server["password"])
 	return connection
 
 
 def fetch_message(num):
-	s = open_connection()
-	s.select("INBOX",readonly=True)
-	typ,data = s.fetch(num,"(RFC822)")
-	s.logout()
+	session = open_connection(src_server)
+	session.select("INBOX",readonly=True)
+	typ,data = session.fetch(num,"(RFC822)")
+	session.logout()
 	return typ,data
 	
 
@@ -52,30 +51,23 @@ def write_log(message):
 
 def scan_attachments(filepath,thread1):
 	thread1.join()
-
-	result = ""
-	response_scan = api.scan_file(filepath)
-	file_hash = response_scan["results"]["sha1"]
-	response_report = api.get_file_report(file_hash)
-	json_dict = json.loads(json.dumps(response_report))
-	
-	for key,value in json_dict["results"].items():
-			if key != "scans":
-				result += "{0} : {1}\n".format(key,value)
-	
-	write_log(result)
+	response_hash = api.scan(filepath)
+	response_report = api.report(response_hash)
+	write_log(response_report)
 
 
 def main():
 	try:
-		s = open_connection()
-		s.select("INBOX",readonly=True)
-			
-		m = "{0} IDLE\r\n".format(s._new_tag().decode("UTF-8"))
-		s.send(m.encode())
+		src_session = open_connection(src_server)
+		src_session.select("INBOX")			
+		dst_session = open_connection(dst_server)
+		dst_session.select("INBOX")
+
+		idle_command = "{0} IDLE\r\n".format(src_session._new_tag().decode("UTF-8"))
+		src_session.send(idle_command.encode())
 
 		while True:
-			line  = s.readline().strip()
+			line = src_session.readline().strip()
 
 			if "EXISTS" in line.decode("UTF-8"):
 				num = line.decode("UTF-8").split(" ")[1]
@@ -96,23 +88,25 @@ def main():
 						
 					if bool(filname):
 						filepath = os.path.join(detach_dir,'attachments',filname)
-						if not os.path.isfile(filepath):
-							write_log("attachments detect : {0}\n".format(filname))
-							t1 = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
-							t1.daemon = True
-							t1.start()
-
-							write_log("start scan attachments : {0}\n".format(filname))
-							t2 = Thread(target=scan_attachments,args=(filepath,t1))
-							t2.daemon = True
-							t2.start()
+						
+						write_log("attachments detect : {0}\n".format(filname))
+						t1 = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
+						t1.daemon = True
+						t1.start()
+						
+						write_log("start scan attachments : {0}\n".format(filname))
+						t2 = Thread(target=scan_attachments,args=(filepath,t1))
+						t2.daemon = True
+						t2.start()
 
 	finally:
 		try:
-			s.close()
+			src_session.close()
+			dst_session.close()
 		except:
 			pass
-		s.logout()
+		src_session.logout()
+		dst_session.logout()
 
 
 def daemon():
@@ -130,16 +124,22 @@ def daemon():
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--user",help="set IMAP user name")
-	parser.add_argument("--password",help="set IMAP user password")
+	parser.add_argument("--src_user",help="set source IMAP user name")
+	parser.add_argument("--src_password",help="set source IMAP user password")
+	parser.add_argument("--dst_user",help="set destination IMAP user name")
+	parser.add_argument("--dst_password",help="set destination IMAP user password")
 	parser.add_argument("--filepath",help="set saving attachments filepath")
 	parser.add_argument("--apikey",help="set virustotal api key")	
 
 	args = parser.parse_args()
-	user = str(args.user)
-	password = str(args.password)
+	
+	src_server["user"] = str(args.src_user)
+	src_server["password"] = str(args.src_password)
+	dst_server["user"] = str(args.dst_user)
+	dst_server["password"] = str(args.dst_password)
+
 	detach_dir = str(args.filepath)
 	apikey = str(args.apikey)
 
-	api = virus_total_apis.PublicApi(apikey)
+	api = Virustotal(apikey)
 	daemon()
