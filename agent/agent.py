@@ -35,7 +35,16 @@ def fetch_message(num):
 	typ,data = session.fetch(num,"(RFC822)")
 	session.logout()
 	return typ,data
-	
+
+
+def transfer_message(message):
+	# write_log(str(type(message)))
+	# write_log(str(bytes(message)))
+
+	session = open_connection(dst_server)
+	session.append("INBOX","",imaplib.Time2Internaldate(time.time()),bytes(message))
+	session.logout()
+
 
 def write_attachments(filepath,payload):
 	with open(filepath,"wb") as f:
@@ -49,8 +58,8 @@ def write_log(message):
 	f.close()
 
 
-def scan_attachments(filepath,thread1):
-	thread1.join()
+def scan_attachments(filepath,thread):
+	thread.join()
 	response_hash = api.scan(filepath)
 	response_report = api.report(response_hash)
 	write_log(response_report)
@@ -76,25 +85,27 @@ def main():
 				if typ != "OK":
 					continue				
 
-				mail_message = email.message_from_bytes(data[0][1])
-
-				for part in mail_message.walk():
+				for part in email.message_from_bytes(data[0][1]).walk():
 					if part.get_content_maintype() == "multipart":
 						continue
 					if part.get('Content-Disposition') is None:
 						continue
 
 					filname = part.get_filename()
-						
+
 					if bool(filname):
+						write_log("[*] attachments detect : {0}\n".format(filname))
 						filepath = os.path.join(detach_dir,'attachments',filname)
 						
-						write_log("attachments detect : {0}\n".format(filname))
+						write_log("[*] start transfer message to receiver\n")
+						transfer_message(email.message_from_bytes(data[0][1]))
+						
+						write_log("[*] start writing attachments : {0}\n".format(filname))
 						t1 = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
 						t1.daemon = True
 						t1.start()
 						
-						write_log("start scan attachments : {0}\n".format(filname))
+						write_log("[*] start scaning attachments : {0}\n".format(filname))
 						t2 = Thread(target=scan_attachments,args=(filepath,t1))
 						t2.daemon = True
 						t2.start()
