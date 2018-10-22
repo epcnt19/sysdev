@@ -21,6 +21,7 @@ src_server = {"host":"localhost","user":"","password":""}
 dst_server = {"host":"localhost","user":"","password":""}
 detach_dir = "."
 log_path = "/var/log/imapagent.log"
+transfer_messageid_lst = []
 
 
 def open_connection(server):
@@ -29,22 +30,30 @@ def open_connection(server):
 	return connection
 
 
-def fetch_message(num):
-	session = open_connection(src_server)
+def fetch_message(num,server):
+	session = open_connection(server)
 	session.select("INBOX",readonly=True)
 	typ,data = session.fetch(num,"(RFC822)")
 	session.logout()
 	return typ,data
 
 
-def transfer_message(message):
+def transfer_message(message,server):
 	# write_log(str(type(message)))
 	# write_log(str(bytes(message)))
-
-	session = open_connection(dst_server)
+	session = open_connection(server)
 	session.append("INBOX","",imaplib.Time2Internaldate(time.time()),bytes(message))
 	session.logout()
 
+
+def delete_message(num,messageid,server):
+	transfer_messageid_lst.append(messageid)
+	session = open_connection(server)
+	session.select("INBOX",readonly=False)
+	session.store(num,'+FLAGS','\\Deleted')
+	session.expunge()
+	session.logout()
+	
 
 def write_attachments(filepath,payload):
 	with open(filepath,"wb") as f:
@@ -69,8 +78,6 @@ def main():
 	try:
 		src_session = open_connection(src_server)
 		src_session.select("INBOX")			
-		dst_session = open_connection(dst_server)
-		dst_session.select("INBOX")
 
 		idle_command = "{0} IDLE\r\n".format(src_session._new_tag().decode("UTF-8"))
 		src_session.send(idle_command.encode())
@@ -80,7 +87,7 @@ def main():
 
 			if "EXISTS" in line.decode("UTF-8"):
 				num = line.decode("UTF-8").split(" ")[1]
-				typ,data = fetch_message(num)
+				typ,data = fetch_message(num,src_server)
 					
 				if typ != "OK":
 					continue				
@@ -98,8 +105,11 @@ def main():
 						filepath = os.path.join(detach_dir,'attachments',filname)
 						
 						write_log("[*] start transfer message to receiver\n")
-						transfer_message(email.message_from_bytes(data[0][1]))
+						transfer_message(email.message_from_bytes(data[0][1]),dst_server)
 						
+						write_log("[*] delete message from INBOX\n")
+						delete_message(num,email.message_from_bytes(data[0][1])['Message-ID'],src_server)
+
 						write_log("[*] start writing attachments : {0}\n".format(filname))
 						t1 = Thread(target=write_attachments,args=(filepath,part.get_payload(decode=True)))
 						t1.daemon = True
@@ -113,11 +123,9 @@ def main():
 	finally:
 		try:
 			src_session.close()
-			dst_session.close()
 		except:
 			pass
 		src_session.logout()
-		dst_session.logout()
 
 
 def daemon():
