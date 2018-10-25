@@ -47,7 +47,11 @@ def scan_attachments_vt(filepath,thread):
 
 def scan_attachments_yara(filepath,thread):
 	thread.join()
-	detect_signatures = surface.yara(rulepath,filepath)
+
+	filetype = surface.scan_filetype(filepath)
+	write_log("filetype : {0}\n".format(filetype))
+	
+	detect_signatures = surface.scan_yara(rulepath,filepath)
 	write_log("detect {0} signature\n".format(str(len(detect_signatures))))
 	
 	result = ""
@@ -123,6 +127,8 @@ def daemon():
 
 	if pid == 0:
 		main()
+	
+	main()
 
 
 if __name__ == "__main__":
