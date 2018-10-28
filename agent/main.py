@@ -45,7 +45,7 @@ def scan_attachments_vt(filepath,thread):
 	write_log(response_report)
 
 
-def scan_attachments_yara(filepath,thread):
+def scan_attachments_surface(filepath,thread):
 	thread.join()
 
 	filetype = surface.scan_filetype(filepath)
@@ -53,12 +53,25 @@ def scan_attachments_yara(filepath,thread):
 	
 	detect_signatures = surface.scan_yara(rulepath,filepath)
 	write_log("detect {0} signature\n".format(str(len(detect_signatures))))
-	
+
 	result = ""
 	for signature in detect_signatures:
 		result += "{0}\n".format(signature)
 
 	write_log(result)
+
+	if "PE32 executable for MS Windows" in filetype:
+		detect_apis = surface.scan_iat(filepath)
+		write_log("detect {0} DLLs\n".format(len(detect_apis.keys())))
+
+		result = ""
+		for dll,apis in detect_apis.items():
+			result += "{0}\n".format(dll.decode("utf-8"))
+
+			for api in apis:
+				result += "\t{0}\n".format(api.decode("utf-8"))
+
+		write_log(result)
 
 
 def main():
@@ -103,8 +116,8 @@ def main():
 						t2.daemon = True
 						t2.start()
 
-						write_log("[*] start scanning attachments using Yara : {0}\n".format(filename))
-						t3 = Thread(target=scan_attachments_yara,args=(filepath,t2))
+						write_log("[*] start scanning attachments using surface analysis : {0}\n".format(filename))
+						t3 = Thread(target=scan_attachments_surface,args=(filepath,t2))
 						t3.deamon = True
 						t3.start()
 
