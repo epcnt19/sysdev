@@ -207,5 +207,4 @@ if __name__ == "__main__":
 	surface = SurfaceAnalysis()
 	q = queue.Queue()
 
-	# daemon()
-	main()
+	daemon()
