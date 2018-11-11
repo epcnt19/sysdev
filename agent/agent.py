@@ -36,11 +36,11 @@ class Agent:
 		return typ,data
 
 
-	def append(self,message):
+	def append(self,message,flags):
 		tmp_connection = imaplib.IMAP4_SSL(self.server_config["host"])
 		tmp_connection.login(self.server_config["user"],self.server_config["password"])
 		tmp_connection.select("INBOX",readonly=False)
-		tmp_connection.append("INBOX","",imaplib.Time2Internaldate(time.time()),bytes(message))
+		tmp_connection.append("INBOX",flags,imaplib.Time2Internaldate(time.time()),bytes(message))
 		tmp_connection.close()
 		tmp_connection.logout()
 
@@ -56,6 +56,16 @@ class Agent:
 		tmp_connection.logout()
 
 
+	def search(self,criterion):
+		tmp_connection = imaplib.IMAP4_SSL(self.server_config["host"])
+		tmp_connection.login(self.server_config["user"],self.server_config["password"])
+		tmp_connection.select("INBOX",readonly=True)
+		typ,data = tmp_connection.search(None,criterion)
+		tmp_connection.close()
+		tmp_connection.logout()
+		return typ,data
+
+	
 	def check_exist(self):
 		line = self.connection.readline().strip()
 

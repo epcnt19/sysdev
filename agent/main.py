@@ -10,6 +10,7 @@ import json
 import argparse
 import requests
 import hashlib
+import queue
 
 from vt import Virustotal
 from agent import Agent
@@ -38,11 +39,25 @@ def write_log(message):
 	f.close()
 
 
-def scan_attachments_vt(filepath,thread):
+def scan_attachments_vt(filepath,q,thread):
 	thread.join()
 	response_hash = api.scan(filepath)
-	response_report = api.report(response_hash)
-	write_log(response_report)
+	response_dict = api.report(response_hash)
+	
+	print(response_dict)
+	evaluation_value = int(response_dict['positives'])*1.0 / int(response_dict['total'])*1.0
+	scan_date = response_dict['scan_date']
+	sha_256 = response_dict['sha256']
+	url = response_dict['permalink']
+
+	q_dist =  {"evaluation_value":evaluation_value,"scan_date":scan_date,"sha256":sha_256,"url":url}
+
+	"""
+	for key,value in response_dict.items():
+		write_log("{0}:{1}\n".format(key,value))
+	"""
+
+	q.put(q_dist)
 
 
 def scan_attachments_surface(filepath,thread):
@@ -60,7 +75,7 @@ def scan_attachments_surface(filepath,thread):
 
 	write_log(result)
 
-	if "PE32 executable for MS Windows" in filetype:
+	if "PE32 executable" in filetype:
 		detect_apis = surface.scan_iat(filepath)
 		write_log("detect {0} DLLs\n".format(len(detect_apis.keys())))
 
@@ -84,6 +99,12 @@ def main():
 
 			if exist:
 				typ,data = src.fetch(num)
+				typ_flagged,data_flagged = src.search('Flagged')
+				flagged_lst = [num.decode('utf-8') for num in data_flagged[0].split()]
+
+				if num in flagged_lst:
+					continue
+
 				if typ != "OK":
 					continue
 
@@ -99,9 +120,10 @@ def main():
 					if bool(filename):
 						write_log("[*] attachments detect : {0}\n".format(filename))
 						filepath = os.path.join(detach_dir,'attachments',filename)
-							
-						write_log("[*] start transfer message to receiver\n")
-						dst.append(email.message_from_bytes(data[0][1]))
+						
+						# transfer other user's mailbox
+						# write_log("[*] start transfer message to receiver\n")
+						# dst.append(email.message_from_bytes(data[0][1]),"")
 							
 						write_log("[*] delete message from INBOX\n")
 						src.delete(num,email.message_from_bytes(data[0][1])['Message-ID'])
@@ -112,15 +134,31 @@ def main():
 						t1.start()
 								
 						write_log("[*] start scanning attachments using VirusTotal : {0}\n".format(filename))
-						t2 = Thread(target=scan_attachments_vt,args=(filepath,t1))
+						t2 = Thread(target=scan_attachments_vt,args=(filepath,q,t1))
 						t2.daemon = True
 						t2.start()
 
-						write_log("[*] start scanning attachments using surface analysis : {0}\n".format(filename))
-						t3 = Thread(target=scan_attachments_surface,args=(filepath,t2))
-						t3.deamon = True
-						t3.start()
+						# detect malicious
+						t2.join()
+						q_dist = q.get()
+						evaluation_value = q_dist['evaluation_value']
+						scan_date = q_dist['scan_date']
+						sha256 = q_dist['sha256']
+						url = q_dist['url']								
+			
+						write_log("[*] evaluation_value : {0} : {1}\n".format(str(evaluation_value),filename))
 
+						if evaluation_value > 0.50:
+							write_log("[*] detect malicious : {0}\n".format(filename))
+							write_log("[*] start scanning attachments using surface analysis : {0}\n".format(filename))
+							t3 = Thread(target=scan_attachments_surface,args=(filepath,t2))
+							t3.deamon = True
+							t3.start()
+						else:
+							write_log("[*] undetect malicious : {0}\n".format(filename))
+							write_log("[*] start appending mail added \\Flagged")
+							src.append(email.message_from_bytes(data[0][1]),"\\Flagged")
+							
 	finally:
 		try:
 			src.exit()
@@ -167,5 +205,7 @@ if __name__ == "__main__":
 	
 	api = Virustotal(apikey)
 	surface = SurfaceAnalysis()
+	q = queue.Queue()
 
-	daemon()
+	# daemon()
+	main()

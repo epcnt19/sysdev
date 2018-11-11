@@ -15,12 +15,12 @@ class Virustotal:
 		return filehash
 
 	def report(self,filehash):
-		result = ""
+		result = {}
 		response_report = self.api.get_file_report(filehash)
 		json_dict = json.loads(json.dumps(response_report))
 
 		for key,value in json_dict["results"].items():
 			if key != "scans":
-				result += "{0} : {1}\n".format(key,value)
+				result.update({key:value})
 		
 		return result
