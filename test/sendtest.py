@@ -17,7 +17,10 @@ def create_message(from_addr,to_addr,subject,body,filename,attach_file):
 	msg["From"] = from_addr
 	msg["To"] = to_addr
 	msg.set_content(body)
-	msg.add_attachment(attach_file,maintype=mine['type'],subtype=mine['subtype'],filename=filename)
+
+	if (filename is not None) and (attach_file is not None):
+		msg.add_attachment(attach_file,maintype=mine['type'],subtype=mine['subtype'],filename=filename)
+	
 	return msg
 
 
@@ -28,10 +31,14 @@ def read_file(filepath):
 
 
 def main():
-	fr = read_file(filepath)
-	fn = filepath.split("/")[-1]
-	
-	msg = create_message(from_addr,to_addr,subject,body,fn,fr)
+
+	if filepath is not None:
+		fr = read_file(filepath)
+		fn = filepath.split("/")[-1]
+		msg = create_message(from_addr,to_addr,subject,body,fn,fr)
+	else:
+		msg = create_message(from_addr,to_addr,subject,body,None,None)
+		
 	s = smtplib.SMTP(server,port)
 	s.sendmail(from_addr,[to_addr],msg.as_string())
 	s.close()
@@ -39,11 +46,11 @@ def main():
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--faddr",help="set from addr")
-	parser.add_argument("--taddr",help="set to addr")
-	parser.add_argument("--subject",help="set subject text")
-	parser.add_argument("--body",help="set body text")
-	parser.add_argument("--filepath",help="set filepath")
+	parser.add_argument("--faddr",help="set from addr",default=None)
+	parser.add_argument("--taddr",help="set to addr",default=None)
+	parser.add_argument("--subject",help="set subject text",default=None)
+	parser.add_argument("--body",help="set body text",default=None)
+	parser.add_argument("--filepath",help="set filepath",default=None)
 
 	args = parser.parse_args()
 	from_addr = args.faddr
